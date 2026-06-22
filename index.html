@@ -4,18 +4,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MVTrack4Gen — Multi-View Point Tracking as Geometric Supervision for 4D Video Generation</title>
-<meta name="description" content="MVTrack4Gen: Multi-View Point Tracking as Geometric Supervision for 4D Video Generation. Code coming soon.">
+<meta name="description" content="MVTrack4Gen: Multi-View Point Tracking as Geometric Supervision for 4D Video Generation. Project page.">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- three.js (geometric visualizer: dual ref/gen 4D point cloud + camera frustums) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "./assets/vendor/three.module.js",
+    "three/addons/": "./assets/vendor/addons/"
+  }
+}
+</script>
+
+<!--
+  ============================================================================
+  TEMPLATE NOTES
+  ============================================================================
+  • Scene galleries (DAVIS / Comparison / iPhone) are data-driven: edit the
+    GALLERIES object near the bottom of this file to add scenes / methods.
+    Each cell loads videos/<section>/<scene>/<role>.mp4 and is filled by JS.
+  • The geometric visualizer (three.js module at the end) loads the per-frame
+    dual ref/gen cloud from assets/pointcloud/car-turn_4d/ (pc_manifest.json + .bin).
+  • Figures live in assets/*.png. Swap freely; this is a structure-first layout.
+  ============================================================================
+-->
 
 <style>
-/* ---------- Theme (borrowed from the Lip Forcing page) ---------- */
+/* ---------- Theme ---------- */
 :root{
   --accent:        #6E45E2;
   --accent-strong: #5733C9;
   --accent-cyan:   #22B8CF;
+  --ref:           #1f9d55;   /* reference   (green) */
+  --gen:           #d23b3b;   /* generated   (red)   */
   --bg:        #FBFAFE;
   --surface:   #FFFFFF;
   --surface-2: #F5F2FB;
@@ -25,32 +50,47 @@
   --border:    #E7E3F2;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-display: 'Manrope', 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --shadow-1: 0 4px 16px rgba(70, 50, 130, 0.06);
   --shadow-2: 0 12px 40px rgba(70, 50, 130, 0.10);
+  --shadow-hi: 0 22px 60px rgba(70, 50, 130, 0.26);
+  --ease: cubic-bezier(.2,.8,.2,1);
 }
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;}
+html{ scroll-behavior:smooth; font-size:clamp(16.5px, 1.08vw, 19.5px); }
 body{
   margin:0;
   font-family:var(--font);
-  background:
-    radial-gradient(1200px 600px at 50% -10%, rgba(110,69,226,0.10), transparent 60%),
-    var(--bg);
+  background:#ffffff;
   color:var(--text);
   line-height:1.65;
   -webkit-font-smoothing:antialiased;
-  min-height:100vh;
-  display:flex;
-  flex-direction:column;
 }
 a{ color: var(--accent); text-decoration:none; }
 a:hover{ text-decoration:underline; }
 
+/* ---------- Sticky nav ---------- */
+.topnav{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  flex-wrap:wrap;
+  padding:10px 16px;
+  background:rgba(251,250,254,0.78);
+  backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--border);
+  font-family:var(--font-display);
+  font-size:0.86rem;
+  font-weight:600;
+}
+.topnav .brand{ color:var(--accent-strong); font-weight:800; margin-right:10px; }
+.topnav a{ color:var(--text-soft); padding:5px 10px; border-radius:8px; transition:color .15s, background .15s, transform .15s var(--ease); }
+.topnav a:hover{ color:var(--text); background:var(--surface-2); text-decoration:none; transform:translateY(-1px); }
+
 main{
-  flex:1;
   width:100%;
-  max-width:920px;
+  max-width:1720px;
   margin:0 auto;
-  padding:clamp(44px, 9vh, 96px) 24px 60px;
+  padding:clamp(28px, 5vh, 52px) clamp(14px, 1.6vw, 26px) 48px;
 }
 
 /* ---------- Hero ---------- */
@@ -62,150 +102,428 @@ main{
   text-transform:uppercase;
   font-size:0.78rem;
   color:var(--text-mute);
-  margin-bottom:16px;
+  margin-bottom:14px;
 }
 .title{
   font-family:var(--font-display);
   font-weight:800;
-  font-size:clamp(1.7rem, 4.6vw, 2.9rem);
-  line-height:1.18;
-  margin:0 auto 8px;
-  max-width:820px;
-  color:var(--text);
+  font-size:clamp(1.2rem, 2.5vw, 2.2rem);
+  line-height:1.26;
+  margin:0 auto 6px;
+  max-width:1500px;
 }
-.brand{
+/* keep each title line on ONE line on desktop; allow wrapping only on small screens */
+.title .tline{ white-space:nowrap; }
+@media (max-width:680px){ .title .tline{ white-space:normal; } }
+.title .name{
   background:linear-gradient(100deg, var(--accent), var(--accent-cyan));
   -webkit-background-clip:text;
   background-clip:text;
   color:transparent;
 }
-
-/* ---------- Authors ---------- */
 .authors{
-  font-size:clamp(1rem, 2.2vw, 1.12rem);
+  font-size:clamp(0.98rem, 2.1vw, 1.1rem);
   font-weight:500;
   color:var(--text);
-  max-width:760px;
+  max-width:820px;
   margin:22px auto 6px;
 }
-.authors a{ color:var(--text); }
 .authors sup{ color:var(--accent); font-weight:600; }
-.affil{
-  color:var(--text-soft);
-  font-size:0.96rem;
-  margin:8px auto 2px;
-}
+.authors a{ color:inherit; text-decoration:underline; text-decoration-color:rgba(110,69,226,0.45); text-underline-offset:2px; transition:color .15s; }
+.authors a:hover{ color:var(--accent-strong); }
+.affil{ color:var(--text-soft); font-size:0.95rem; margin:8px auto 2px; }
 .affil sup{ color:var(--accent); font-weight:600; }
-.corr{
-  color:var(--text-mute);
-  font-size:0.86rem;
-  margin-top:4px;
-}
-
-/* ---------- Code coming soon badge ---------- */
-.badge{
-  display:inline-flex;
-  align-items:center;
-  gap:10px;
-  margin:30px 0 6px;
-  padding:11px 22px;
-  border:1px solid var(--border);
-  border-radius:999px;
-  background:var(--surface);
-  box-shadow:var(--shadow-2);
-  font-weight:600;
-  color:var(--text);
-}
-.badge .dot{
-  width:9px; height:9px; border-radius:50%;
-  background:var(--accent);
-  animation:pulse 1.8s infinite;
-}
-@keyframes pulse{
-  0%   { box-shadow:0 0 0 0 rgba(110,69,226,0.5); }
-  70%  { box-shadow:0 0 0 12px rgba(110,69,226,0); }
-  100% { box-shadow:0 0 0 0 rgba(110,69,226,0); }
-}
+.corr{ color:var(--text-mute); font-size:0.85rem; margin-top:4px; }
 
 /* ---------- Links ---------- */
 .links-row{
-  display:flex;
-  flex-wrap:wrap;
-  gap:14px;
-  justify-content:center;
-  margin-top:24px;
+  display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin-top:24px;
 }
 .link-btn{
-  display:inline-flex;
-  align-items:center;
-  gap:9px;
-  padding:11px 20px;
-  border:1px solid var(--border);
-  border-radius:10px;
-  background:var(--surface);
-  color:var(--text);
+  display:inline-flex; align-items:center; gap:9px;
+  padding:10px 19px;
+  border:1px solid var(--border); border-radius:10px;
+  background:var(--surface); color:var(--text);
   font-weight:600;
-  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+  transition:transform .14s var(--ease), box-shadow .14s ease, border-color .14s ease;
 }
-.link-btn:hover{
-  text-decoration:none;
-  transform:translateY(-2px);
-  box-shadow:var(--shadow-2);
-  border-color:var(--accent);
-}
+.link-btn:hover{ text-decoration:none; transform:translateY(-3px); box-shadow:var(--shadow-2); border-color:var(--accent); }
 .link-btn.disabled{ opacity:0.5; pointer-events:none; }
 
-/* ---------- Abstract ---------- */
-.abstract{
-  margin-top:56px;
-  padding:30px clamp(22px, 4vw, 40px);
+/* ---------- TL;DR ---------- */
+.tldr{
+  display:flex; gap:16px; align-items:flex-start;
+  text-align:left;
+  margin:34px auto 0;
+  max-width:1100px;
+  padding:22px 28px;
   background:var(--surface);
   border:1px solid var(--border);
-  border-radius:16px;
-  box-shadow:var(--shadow-2);
+  border-left:4px solid var(--accent);
+  border-radius:14px;
+  box-shadow:var(--shadow-1);
+  transition:transform .18s var(--ease), box-shadow .18s ease;
 }
-.abstract h2{
-  font-family:var(--font-display);
-  font-weight:800;
-  font-size:1.05rem;
-  letter-spacing:0.04em;
-  text-transform:uppercase;
-  text-align:center;
-  color:var(--accent-strong);
-  margin:0 0 16px;
+.tldr:hover{ transform:translateY(-3px); box-shadow:var(--shadow-2); }
+.tldr .tag{
+  font-family:var(--font-display); font-weight:800; color:var(--accent-strong);
+  letter-spacing:0.04em; flex:0 0 auto; padding-top:1px;
 }
-.abstract p{
-  margin:0;
-  color:var(--text-soft);
-  font-size:1.02rem;
-  text-align:justify;
+.tldr p{ margin:0; color:#0d0d12; font-size:1rem; }
+.hl{ color:var(--accent-strong); font-weight:700; }
+
+/* ---------- Stat strip ---------- */
+.stat-strip{
+  display:grid; grid-template-columns:repeat(4, 1fr); gap:16px;
+  margin:24px auto 0; max-width:1200px;
+}
+.stat-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:16px 14px; box-shadow:var(--shadow-1); text-align:center;
+  transition:transform .18s var(--ease), box-shadow .18s ease, border-color .18s ease;
+}
+.stat-card:hover{ transform:translateY(-4px); box-shadow:var(--shadow-2); border-color:var(--accent); }
+.stat-num{ font-family:var(--font-display); font-weight:800; font-size:1.15rem; color:var(--accent-strong); line-height:1.2; }
+.stat-label{ font-size:0.82rem; color:#0d0d12; font-weight:600; margin-top:5px; }
+@media (max-width:760px){ .stat-strip{ grid-template-columns:repeat(2,1fr); } }
+
+/* ---------- Sections ---------- */
+.sec{ margin-top:72px; scroll-margin-top:72px; }
+.sec-label{
+  font-family:var(--font-display); font-weight:700;
+  letter-spacing:0.16em; text-transform:uppercase;
+  font-size:0.74rem; color:var(--accent); margin-bottom:8px;
+}
+.sec-heading{
+  font-family:var(--font-display); font-weight:800;
+  font-size:clamp(1.55rem, 3vw, 2.3rem); margin:0 0 6px;
+}
+.sec-lead{ color:#0d0d12; font-size:1.12rem; margin:0 0 22px; max-width:none; }
+.prose{ color:#0d0d12; font-size:1.14rem; font-weight:500; max-width:none; }
+.prose p{ margin:0 0 14px; }
+
+/* Abstract card */
+.abstract{
+  padding:28px clamp(20px, 4vw, 38px);
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; box-shadow:var(--shadow-2);
+}
+.abstract p{ margin:0; color:#0d0d12; text-align:justify; }
+
+/* ---------- Contributions ---------- */
+.contrib{ display:grid; gap:14px; margin-top:6px; }
+.contrib-item{
+  display:flex; gap:16px; align-items:flex-start;
+  padding:18px 20px; background:var(--surface);
+  border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-1);
+  transition:transform .18s var(--ease), box-shadow .18s ease, border-color .18s ease;
+}
+.contrib-item:hover{ transform:translateY(-3px) scale(1.005); box-shadow:var(--shadow-2); border-color:var(--accent); }
+.contrib-item .ic{
+  flex:0 0 auto; width:40px; height:40px; border-radius:11px;
+  display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(135deg, var(--accent), var(--accent-cyan));
+  color:#fff; font-family:var(--font-display); font-weight:800; font-size:1.1rem;
+}
+.contrib-item p{ margin:0; color:#0d0d12; font-size:1.05rem; }
+.contrib-item p b{ color:#000; }
+
+/* ---------- Media slot (the video / figure box) ---------- */
+.slot{
+  position:relative; width:100%; aspect-ratio:16/9;
+  border:2px dashed var(--border); border-radius:12px;
+  background:
+    repeating-linear-gradient(45deg, rgba(110,69,226,0.025) 0 10px, transparent 10px 20px),
+    var(--surface-2);
+  overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  transition:transform .28s var(--ease), box-shadow .28s ease, border-color .2s ease;
+}
+.slot .ph{
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  color:var(--text-mute); text-align:center; padding:10px;
+}
+.slot .ph svg{ opacity:0.45; }
+.slot .ph .ph-path{ font-family:var(--font-mono); font-size:0.74rem; color:var(--accent-strong); opacity:0.85; word-break:break-all; }
+.slot .ph .ph-hint{ font-size:0.7rem; }
+.slot.filled{ border-style:solid; border-color:var(--border); background:#fff; }
+.slot video, .slot img{ width:100%; height:100%; object-fit:contain; display:block; background:#fff; transition:transform .35s var(--ease); }
+.slot.portrait{ aspect-ratio:9/16; max-width:300px; margin:0 auto; }
+/* video slot sized exactly to the clip (no letterbox); click to zoom */
+.slot.vidfit{ background:#fff; }
+.slot video{ cursor:zoom-in; }
+
+/* figures: fit each image at its OWN aspect ratio (no 16:9 black letterbox) */
+.slot.figfit{ aspect-ratio:auto; background:transparent; border:none; border-radius:14px; }
+.slot.figfit.filled{ background:transparent; box-shadow:var(--shadow-1); }
+.slot.figfit img{ width:100%; height:auto; object-fit:contain; background:transparent; border-radius:14px; }
+.cell:hover .slot.figfit{ transform:translateY(-6px); box-shadow:var(--shadow-hi); }
+.cell:hover .slot.figfit img{ transform:scale(1.015); }
+
+/* synchronized video loading: light overlay + numeric % while loading, all play together */
+.slot .vspin{
+  position:absolute; inset:0; z-index:5;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,0.55);
+  color:#9b9ba7; font-family:var(--font-mono); font-weight:500; font-size:0.8rem; letter-spacing:0.04em;
+}
+.slot:not(.is-loading) .vspin{ display:none; }
+.slot .vspin .pct{ color:#9b9ba7; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+/* faint bottom progress line */
+.slot .vbar{ position:absolute; left:0; right:0; bottom:0; height:2px; z-index:6; background:rgba(0,0,0,0.05); }
+.slot:not(.is-loading) .vbar{ display:none; }
+.slot .vbar span{ display:block; height:100%; width:0; background:rgba(0,0,0,0.18); transition:width .15s linear; }
+
+/* --- the "everything reacts on hover" interaction --- */
+.cell{ margin:0; transition:transform .25s var(--ease); }
+.cell figcaption{
+  margin-top:10px; text-align:center; font-size:0.98rem; font-weight:600; color:var(--text-soft);
+  transition:color .2s ease;
+}
+.cell.ours figcaption{ color:var(--accent-strong); font-weight:700; }
+.cell figcaption sub{ font-weight:600; font-size:0.82em; }
+.cell figcaption .bb, #pc4d-gen-cap .bb{ font-weight:600; font-size:0.82em; color:var(--text-mute); }
+.cap-ref{ color:var(--ref) !important; }
+.cap-gen{ color:var(--gen) !important; }
+
+.cell:hover{ z-index:3; }
+.cell:hover .slot{
+  transform:translateY(-8px) scale(1.045);
+  box-shadow:var(--shadow-hi);
+  border-color:var(--accent);
+}
+.cell:hover .slot video, .cell:hover .slot img{ transform:scale(1.07); }
+.cell.ours:hover .slot{ border-color:var(--accent); box-shadow:0 22px 60px rgba(110,69,226,0.34); }
+.cell:hover figcaption{ color:var(--accent-strong); }
+
+/* grids */
+.vgrid{ display:grid; gap:16px; }
+.cols-2{ grid-template-columns:repeat(2,1fr); }
+.cols-3{ grid-template-columns:repeat(3,1fr); }
+.cols-4{ grid-template-columns:repeat(4,1fr); }
+.cols-5{ grid-template-columns:repeat(5,1fr); }
+.cols-1{ grid-template-columns:1fr; max-width:920px; margin:0 auto; }
+@media (max-width:820px){ .cols-3,.cols-4,.cols-5{ grid-template-columns:repeat(2,1fr); } }
+@media (max-width:520px){ .cols-2,.cols-3,.cols-4,.cols-5{ grid-template-columns:1fr; } }
+
+.wide-slot{ max-width:100%; margin:0 auto; }
+
+/* ---------- Scene selector tabs ---------- */
+.scene-tabs{
+  display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin:18px 0 0;
+}
+.scene-tab{
+  font-family:var(--font-display); font-weight:700; font-size:0.86rem;
+  padding:8px 16px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface); color:var(--text-soft);
+  transition:transform .15s var(--ease), box-shadow .15s ease, color .15s, background .15s, border-color .15s;
+}
+.scene-tab:hover{ transform:translateY(-2px); color:var(--text); border-color:var(--accent); box-shadow:var(--shadow-1); }
+.scene-tab.active{
+  color:#fff; border-color:transparent;
+  background:linear-gradient(135deg, var(--accent), var(--accent-cyan));
+  box-shadow:0 8px 22px rgba(110,69,226,0.34);
+}
+.scene-stage{ animation:fade .35s var(--ease); }
+@keyframes fade{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
+
+/* comparison scene card wrapper */
+.compare-card{
+  margin-top:6px; padding:18px;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:16px; box-shadow:var(--shadow-1);
+}
+.compare-grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); }
+
+.cap{ color:var(--text-mute); font-size:0.88rem; margin-top:14px; max-width:860px; }
+.legend{ display:inline-flex; gap:16px; margin-top:6px; font-size:0.85rem; font-weight:600; }
+.legend .ref{ color:var(--ref); }
+.legend .gen{ color:var(--gen); }
+
+/* numbered method list */
+.steps{ display:grid; gap:14px; margin-top:24px; grid-template-columns:repeat(3,1fr); }
+@media (max-width:820px){ .steps{ grid-template-columns:1fr; } }
+.step{
+  background:var(--surface); border:1px solid var(--border); border-radius:14px;
+  padding:18px; box-shadow:var(--shadow-1);
+  transition:transform .18s var(--ease), box-shadow .18s ease, border-color .18s ease;
+}
+.step:hover{ transform:translateY(-4px); box-shadow:var(--shadow-2); border-color:var(--accent); }
+.step .n{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border-radius:8px;
+  background:linear-gradient(135deg, var(--accent), var(--accent-cyan));
+  color:#fff; font-weight:800; font-family:var(--font-display); margin-bottom:10px;
+}
+.step h4{ margin:0 0 6px; font-size:1rem; font-family:var(--font-display); }
+.step p{ margin:0; color:var(--text-soft); font-size:0.92rem; }
+
+/* ---------- Results table ---------- */
+.table-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:16px; box-shadow:var(--shadow-1); background:var(--surface); }
+table.results{ border-collapse:collapse; width:100%; min-width:760px; font-size:0.96rem; }
+.results th, .results td{ padding:9px 12px; text-align:center; white-space:nowrap; }
+.results thead th{
+  font-family:var(--font-display); font-weight:700; color:var(--text);
+  border-bottom:2px solid var(--border); font-size:0.8rem;
+}
+.results th.metric{ font-weight:600; color:var(--text-mute); }
+.results td.method, .results th.method{ text-align:left; font-weight:600; color:var(--text); }
+.results .grouprow td{
+  text-align:left; color:var(--accent-strong);
+  font-size:0.78rem; letter-spacing:0.04em; text-transform:uppercase;
+  background:var(--surface-2); font-weight:700;
+}
+.results tbody tr{ transition:background .15s ease; }
+.results tbody tr:hover{ background:rgba(110,69,226,0.05); }
+.results tr.ours-row{ background:transparent; }
+.results tr.ours-row td.method,
+.results tr.ours-row td{ color:var(--text); }
+.results tr.ours-row:hover{ background:rgba(0,0,0,0.03); }
+.results td.best{ font-weight:800; color:var(--text); }
+.results tr.ours-row td.best{ color:var(--text); }      /* ours rows in black, not purple */
+.results td.method sub{ font-size:0.8em; font-weight:600; }
+/* paper-style improvement deltas: green = gain, red = loss */
+.results .dp{ color:#1f9d55; font-weight:600; font-size:0.82em; margin-left:5px; }
+.results .dn{ color:#d23b3b; font-weight:600; font-size:0.82em; margin-left:5px; }
+
+/* ---------- Geometric visualizer (dual 4D point cloud) ---------- */
+.pc4d{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.45fr); gap:18px; align-items:stretch; }
+@media (max-width:840px){ .pc4d{ grid-template-columns:1fr; } }
+.pc4d-left{ display:flex; flex-direction:column; gap:14px; min-width:0; }
+.pc4d-left .cell{ margin:0; }
+.pc4d-right{ display:flex; flex-direction:column; gap:10px; min-width:0; }
+.pc4d-canvas{
+  position:relative; width:100%; flex:1 1 auto; min-height:clamp(320px, 52vh, 560px);
+  border:1px solid var(--border); border-radius:16px; overflow:hidden;
+  background:#fff; box-shadow:var(--shadow-1); cursor:grab; touch-action:none;
+}
+.pc4d-canvas:active{ cursor:grabbing; }
+.pc4d-canvas canvas{ display:block; width:100%; height:100%; }
+.pc4d-status{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:#9b9ba7; font-family:var(--font-mono); font-size:0.85rem; pointer-events:none;
+}
+.pc4d-status.hidden{ display:none; }
+.pc4d-toggles{ display:flex; flex-wrap:wrap; gap:8px; }
+.pc-tog{
+  font-family:var(--font-display); font-weight:700; font-size:0.82rem;
+  padding:7px 15px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface); color:var(--text-soft);
+  transition:transform .15s var(--ease), box-shadow .15s, color .15s, border-color .15s, background .15s;
+}
+.pc-tog:hover{ transform:translateY(-2px); color:var(--text); border-color:var(--accent); box-shadow:var(--shadow-1); }
+.pc-tog.active{ color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--accent-cyan)); box-shadow:0 8px 22px rgba(110,69,226,0.3); }
+/* model toggle (top-left of the geometric visualizer) */
+.pc4d-models{ display:flex; flex-wrap:wrap; gap:8px; }
+.pc-model{
+  font-family:var(--font-display); font-weight:700; font-size:0.8rem; padding:7px 14px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface); color:var(--text-soft);
+  transition:transform .15s var(--ease), box-shadow .15s, color .15s, border-color .15s, background .15s;
+}
+.pc-model:hover{ transform:translateY(-2px); color:var(--text); border-color:var(--accent); box-shadow:var(--shadow-1); }
+.pc-model.active{ color:#fff; border-color:transparent; background:linear-gradient(135deg,var(--accent),var(--accent-cyan)); box-shadow:0 8px 22px rgba(110,69,226,0.3); }
+.pc-model.bb.active{ background:linear-gradient(135deg,#8a8f9c,#5b606b); box-shadow:0 8px 22px rgba(91,96,107,0.3); }
+.pc-hint{ text-align:center; color:var(--text-mute); font-size:0.82rem; margin-top:2px; }
+/* scene thumbnail selector under the 3D viewer */
+.pc4d-scenes{ display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin-top:18px; }
+.pc-row-break{ flex-basis:100%; height:0; }
+.pc-scene{
+  position:relative; width:clamp(120px, 15vw, 168px); aspect-ratio:16/9;
+  border-radius:12px; overflow:hidden; cursor:pointer; padding:0; border:2px solid var(--border);
+  background:var(--surface-2); transition:transform .15s var(--ease), box-shadow .15s ease, border-color .15s ease;
+}
+.pc-scene img{ width:100%; height:100%; object-fit:cover; display:block; }
+.pc-scene span{
+  position:absolute; left:0; right:0; bottom:0; padding:4px 8px;
+  font-family:var(--font-display); font-weight:700; font-size:0.78rem; color:#fff; text-align:left;
+  background:linear-gradient(transparent, rgba(0,0,0,0.7));
+}
+.pc-scene:hover{ transform:translateY(-3px); box-shadow:var(--shadow-2); border-color:var(--accent); }
+.pc-scene.active{ border-color:var(--accent); box-shadow:0 8px 22px rgba(110,69,226,0.4); }
+.pc-scene.active::after{ content:""; position:absolute; inset:0; border:2px solid var(--accent); border-radius:10px; }
+/* "Ref / Gen color" toggle -> soft green/red border on the two left videos */
+.pc4d.tinted #pc4d-ref{ border-color:var(--ref) !important; border-width:5px !important; box-shadow:0 0 0 4px rgba(31,157,85,0.4); }
+.pc4d.tinted #pc4d-gen{ border-color:var(--gen) !important; border-width:5px !important; box-shadow:0 0 0 4px rgba(210,59,59,0.4); }
+
+/* ---------- BibTeX ---------- */
+.bib-wrap{ position:relative; }
+.bib{
+  margin:0; padding:20px 22px; overflow-x:auto;
+  background:#1c1830; color:#e7e2f5; border-radius:14px;
+  font-family:var(--font-mono); font-size:0.84rem; line-height:1.6;
+}
+.copy-btn{
+  position:absolute; top:12px; right:12px;
+  padding:6px 14px; border:1px solid rgba(255,255,255,0.2); border-radius:8px;
+  background:rgba(255,255,255,0.1); color:#fff; font-weight:600; font-size:0.8rem; cursor:pointer;
+  transition:background .15s, transform .15s var(--ease);
+}
+.copy-btn:hover{ background:rgba(255,255,255,0.2); transform:translateY(-1px); }
+
+/* ---------- Scroll reveal (fade up from white, more pronounced) ---------- */
+.reveal{ opacity:0; transform:translateY(38px) scale(0.98); transition:opacity .85s var(--ease), transform .85s var(--ease); }
+.reveal.is-visible{ opacity:1; transform:none; }
+
+/* nav gains depth once you scroll */
+.topnav{ transition:box-shadow .25s ease, background .25s ease; }
+.topnav.is-scrolled{ background:rgba(251,250,254,0.9); box-shadow:0 6px 22px rgba(70,50,130,0.10); }
+
+/* click-to-zoom figures */
+.slot.figfit img{ cursor:zoom-in; }
+.lightbox{
+  position:fixed; inset:0; z-index:200; display:none;
+  align-items:center; justify-content:center; padding:24px;
+  background:rgba(8,7,16,0.88); backdrop-filter:blur(6px); cursor:zoom-out;
+}
+.lightbox.open{ display:flex; animation:fade .26s var(--ease); }
+.lightbox img, .lightbox video{ max-width:96vw; max-height:92vh; width:auto; height:auto; border-radius:12px; box-shadow:0 30px 90px rgba(0,0,0,0.55); background:#000; }
+.lb-close{ position:fixed; top:18px; right:24px; z-index:201; width:46px; height:46px; border-radius:50%; border:none; cursor:pointer; display:none; background:rgba(255,255,255,0.16); color:#fff; font-size:1.9rem; line-height:1; }
+.lightbox.open .lb-close{ display:block; }
+.lb-close:hover{ background:rgba(255,255,255,0.3); }
+.link-btn .hf{ font-size:1.12rem; line-height:1; }
+
+@media (prefers-reduced-motion: reduce){
+  .reveal{ opacity:1 !important; transform:none !important; transition:none; }
+  .scene-stage{ animation:none; }
 }
 
 footer{
-  text-align:center;
-  padding:26px 24px;
-  color:var(--text-mute);
-  font-size:0.85rem;
-  border-top:1px solid var(--border);
+  text-align:center; margin-top:80px; padding:26px 24px;
+  color:var(--text-mute); font-size:0.85rem; border-top:1px solid var(--border);
 }
 </style>
 </head>
 <body>
 
+<!-- ============================== NAV ============================== -->
+<nav class="topnav">
+  <span class="brand">MVTrack4Gen</span>
+  <a href="#abstract">Abstract</a>
+  <a href="#teaser">Teaser</a>
+  <a href="#contrib">Contributions</a>
+  <a href="#analysis">Analysis</a>
+  <a href="#method">Method</a>
+  <a href="#results">Results</a>
+  <a href="#bibtex">BibTeX</a>
+</nav>
+
 <main>
+
+  <!-- ============================== HERO ============================== -->
   <section class="hero">
     <div class="eyebrow">KAIST AI &times; Sony AI</div>
 
     <h1 class="title">
-      Multi-View Point Tracking as Geometric Supervision<br>for 4D Video Generation
+      <span class="name">MVTrack4Gen</span><br>
+      <span class="tline">Multi-View Point Tracking as Geometric Supervision</span><br>
+      <span class="tline">for 4D Video Generation</span>
     </h1>
 
     <p class="authors">
-      JoungBin Lee<sup>1</sup>, Jaewoo Jung<sup>1</sup>, JongMin Lee<sup>1</sup>,
-      Tongmin Kim<sup>1</sup>, Hyunsung Kim<sup>1</sup>,
-      Takuya Narihira<sup>2</sup>, Kazumi Fukuda<sup>2</sup>,
-      Jahyeok Koo<sup>1</sup>, Jisang Han<sup>1</sup>,
-      Yuki Mitsufuji<sup>2,3,&dagger;</sup>, Seungryong Kim<sup>1,&dagger;</sup>
+      <a href="https://scholar.google.com/citations?user=0H3dcPoAAAAJ&amp;hl=en" target="_blank" rel="noopener">JoungBin Lee</a><sup>1</sup>, <a href="https://crepejung00.github.io" target="_blank" rel="noopener">Jaewoo Jung</a><sup>1</sup>, <a href="https://icetea-cv.github.io" target="_blank" rel="noopener">Jongmin Lee</a><sup>1</sup>, Tongmin Kim<sup>1</sup>, Hyunsung Kim<sup>1</sup>,<br>
+      <a href="https://scholar.google.com/citations?user=D3h3NxwAAAAJ&amp;hl=en" target="_blank" rel="noopener">Takuya Narihira</a><sup>2</sup>, <a href="https://ai.sony/people/Kazumi-Fukuda/" target="_blank" rel="noopener">Kazumi Fukuda</a><sup>2</sup>, <a href="https://jahyeok-koo.github.io" target="_blank" rel="noopener">Jahyeok Koo</a><sup>1</sup>, <a href="https://onground-korea.github.io" target="_blank" rel="noopener">Jisang Han</a><sup>1</sup>,<br>
+      <a href="https://www.yukimitsufuji.com" target="_blank" rel="noopener">Yuki Mitsufuji</a><sup>2,3,&dagger;</sup>, <a href="https://cvlab.kaist.ac.kr/members/faculty" target="_blank" rel="noopener">Seungryong Kim</a><sup>1,&dagger;</sup>
     </p>
     <p class="affil">
       <sup>1</sup>KAIST AI &nbsp;&middot;&nbsp;
@@ -214,53 +532,1123 @@ footer{
     </p>
     <p class="corr"><sup>&dagger;</sup>Corresponding authors</p>
 
-    <div class="badge"><span class="dot"></span> Code Coming Soon</div>
-
     <div class="links-row">
-      <!-- EDIT ME: add arXiv / paper link when available -->
       <a class="link-btn disabled" href="#" aria-disabled="true">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-        </svg>
-        <span>Paper (soon)</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        <span>Paper</span>
       </a>
-      <a class="link-btn" href="https://github.com/cvlab-kaist/MVTrack4Gen" target="_blank" rel="noopener">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"></polyline>
-          <polyline points="8 6 2 12 8 18"></polyline>
-        </svg>
-        <span>Code</span>
+      <a class="link-btn disabled" href="#" aria-disabled="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        <span>arXiv</span>
       </a>
+      <a class="link-btn disabled" href="#" aria-disabled="true">
+        <span class="hf" aria-hidden="true">&#129303;</span>
+        <span>Hugging Face</span>
+      </a>
+      <a class="link-btn disabled" href="#" aria-disabled="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+        <span>Code (Coming Soon)</span>
+      </a>
+      <a class="link-btn" href="#pointcloud">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        <span>Video</span>
+      </a>
+      <a class="link-btn" href="#bibtex">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4H6a2 2 0 0 0-2 2v4a2 2 0 0 1-2 2 2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h1"></path><path d="M17 4h1a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2 2 2 0 0 0-2 2v4a2 2 0 0 1-2 2h-1"></path></svg>
+        <span>BibTeX</span>
+      </a>
+    </div>
+
+    <div class="tldr">
+      <span class="tag">TL;DR</span>
+      <p>
+        <span class="hl">MVTrack4Gen</span> turns <strong>multi-view point tracking</strong>
+        into a geometric &amp; motion supervision signal for novel-view video diffusion.
+        Our key finding: specific attention layers already encode <em>intra-video temporal</em>
+        and <em>inter-video cross-view</em> correspondences. We route those features into an
+        auxiliary tracking head and add a correspondence cross-entropy loss — yielding
+        <strong>state-of-the-art geometric consistency</strong> with
+        <strong>no 3D reconstruction at inference</strong>, on top of two backbones
+        (<strong>ReCamMaster</strong> &amp; <strong>ReDirector</strong>).
+      </p>
+    </div>
+
+    <div class="stat-strip">
+      <div class="stat-card"><div class="stat-num">SOTA</div><div class="stat-label">Cross-view geometric consistency (MEt3R)</div></div>
+      <div class="stat-card"><div class="stat-num">No 3D Recon</div><div class="stat-label">No external depth or reconstruction</div></div>
+      <div class="stat-card"><div class="stat-num">2 Backbones</div><div class="stat-label">ReCamMaster &amp; ReDirector</div></div>
+      <div class="stat-card"><div class="stat-num">DAVIS + iPhone</div><div class="stat-label">In-the-wild benchmarks</div></div>
     </div>
   </section>
 
-  <section class="abstract">
-    <h2>Abstract</h2>
-    <p>
-      Synthesizing a video from a novel camera viewpoint given a monocular reference video
-      demands both geometric consistency and motion fidelity to the reference. Existing
-      novel-view generation methods that rely on explicit 3D representations are bounded by
-      the accuracy of off-the-shelf reconstruction modules, which produce inaccurate depth for
-      dynamic objects in monocular videos, whereas pipelines that rely solely on diffusion
-      priors lack geometric and motion consistency. In this work, we introduce
-      <strong>multi-view tracking</strong> as an additional motion signal that supervises the
-      diffusion model, enforcing both motion and geometric consistency between the reference and
-      generated views. Our key finding is that, as an emergent property, at specific attention
-      layers each query point highly attends to its corresponding point across views in the
-      attention map. We exploit this structure by routing the features of these layers into an
-      auxiliary cross-view tracking head, and jointly train a video diffusion model with a
-      point-tracking objective that makes the model follow the reference motion and preserves
-      geometric consistency without any explicit 3D reconstruction. On diverse benchmarks, our
-      method achieves state-of-the-art geometric consistency and camera-pose accuracy without
-      requiring depth estimation or 3D reconstruction at inference.
+  <!-- ============================== ABSTRACT ============================== -->
+  <section id="abstract" class="sec">
+    <div class="sec-label">Abstract</div>
+    <h2 class="sec-heading">Abstract</h2>
+    <div class="abstract">
+      <p>
+        Synthesizing a novel-view video from a monocular reference video along a target camera
+        trajectory requires both geometric consistency and motion fidelity with respect to the
+        reference video. Existing methods based on explicit 3D representations are limited by the
+        accuracy of off-the-shelf reconstruction modules, which often produce inaccurate geometry
+        for dynamic objects in monocular videos. In contrast, camera-conditioning-only methods can
+        achieve high visual quality but often struggle to preserve geometric and motion consistency.
+        In this work, we introduce <strong>MVTrack4Gen</strong> (<strong>M</strong>ulti-<strong>V</strong>iew
+        point <strong>Track</strong>ing <strong>for</strong> Novel-View <strong>Gen</strong>eration),
+        a motion-aware training framework that leverages multi-view point tracking as an additional
+        geometric and motion supervision signal for novel-view video diffusion models. Our key finding
+        is that attention layers encode strong correspondence cues, where query features attend to key
+        features at geometrically corresponding locations across views and over time, and the
+        misalignment of these correspondences causes motion inconsistency. Based on this observation,
+        we route these features into an auxiliary multi-view tracking head and jointly train the
+        diffusion model with a point-tracking objective. By explicitly strengthening these motion-aware
+        correspondences, MVTrack4Gen improves the model's ability to follow the motion in the reference
+        view and maintain cross-view geometric consistency. Across diverse benchmarks, our method
+        achieves state-of-the-art geometric consistency and competitive camera accuracy.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================== TEASER ============================== -->
+  <section id="teaser" class="sec">
+    <div class="sec-label">Teaser</div>
+    <h2 class="sec-heading">Joint Novel-View Video Generation &amp; Multi-View Point Tracking</h2>
+    <p class="sec-lead"><strong>MVTrack4Gen</strong> jointly generates a novel-view video and multi-view point tracks, given a monocular reference video with query points and a user-specified camera trajectory. Lifting both the <strong style="color:var(--ref)">reference</strong> and <strong style="color:var(--gen)">generated</strong> frames into 3D space using Depth Anything&nbsp;3 shows that the target views and multi-view point tracks faithfully preserve the dynamic motion of the reference video while remaining geometrically consistent.</p>
+    <p class="legend"><span class="ref">&#9632; Reference Video</span><span class="gen">&#9632; Generated Video</span></p>
+    <figure class="cell">
+      <div class="slot wide-slot figfit" data-src="assets/teaser.webp" data-path="assets/teaser.webp"></div>
+      <figcaption></figcaption>
+    </figure>
+  </section>
+
+  <!-- ============================== CONTRIBUTIONS ============================== -->
+  <section id="contrib" class="sec">
+    <div class="sec-label">Contributions</div>
+    <h2 class="sec-heading">What's new</h2>
+    <div class="contrib">
+      <div class="contrib-item">
+        <div class="ic">1</div>
+        <p>We reveal that <b>specific attention layers</b> in a novel-view video diffusion model
+           simultaneously encode <em>intra-video</em> and <em>inter-video</em> correspondences, and
+           strengthening these correspondences through auxiliary supervision improves novel-view
+           generation quality.</p>
+      </div>
+      <div class="contrib-item">
+        <div class="ic">2</div>
+        <p>We introduce a <b>motion-aware training framework</b> for novel-view video diffusion models,
+           where the diffusion backbone is augmented with a <b>multi-view point tracking head</b> and
+           jointly trained to estimate multi-view point tracks from its attention features — enabling
+           explicit motion-correspondence learning across reference and target views.</p>
+      </div>
+      <div class="contrib-item">
+        <div class="ic">3</div>
+        <p>We demonstrate that our framework <b>generalizes across two camera-conditioning-only
+           backbones</b> (ReCamMaster &amp; ReDirector), consistently improving visual quality, geometric
+           and motion consistency, and camera-pose accuracy on DAVIS and iPhone — achieving
+           <b>state-of-the-art geometric consistency</b> while maintaining competitive camera accuracy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== ANALYSIS ============================== -->
+  <section id="analysis" class="sec">
+    <div class="sec-label">Analysis</div>
+    <h2 class="sec-heading">Correspondence concentrates in specific attention layers</h2>
+    <p class="sec-lead">
+      Camera-conditioning-only novel-view diffusion models exchange information across views through
+      3D attention. We probe <em>where</em>: at every diffusion layer and denoising timestep we measure
+      how well attention matches reliable correspondences (cycle-consistency check &amp; PCK), together
+      with how strongly and how sharply attention concentrates on the correct match (a harmonic mean of
+      matching accuracy, attention score, and confidence).
+    </p>
+    <figure class="cell" style="margin-top:6px;">
+      <div class="slot wide-slot figfit" data-src="assets/analysis.webp" data-path="assets/analysis.webp"></div>
+      <figcaption>Matching Accuracy and Harmonic Mean in ReCamMaster. We visualize matching
+        accuracy (top) and the harmonic mean of matching accuracy, attention score, and confidence score
+        (bottom) across diffusion layers and denoising timesteps. Results are shown for intra-video temporal
+        correspondence in the reference and target views in (a) and (b), respectively, and for inter-video
+        cross-view correspondence in (c). The rightmost column plots the top three layers with the highest
+        cross-view correspondence scores. This figure shows that accurate cross-view and temporal matching
+        emerge at specific intermediate layers.</figcaption>
+    </figure>
+    <p class="sec-lead" style="margin-top:20px;">
+      <strong>Key findings.</strong>
+      <span style="display:block; margin-top:12px;"><b>First,</b> query-key matching within 3D attention
+        blocks provides clear correspondence cues, capturing <b>intra-video temporal correspondences</b>
+        within each view as well as <b>inter-video cross-view correspondences</b> between the generated and
+        reference views.</span>
+      <span style="display:block; margin-top:12px;"><b>Second,</b> temporal and cross-view correspondences
+        become simultaneously prominent in <b>specific intermediate diffusion layers</b>, indicating which
+        regions the model refers to when synthesizing each part of the generated frame.</span>
+      <span style="display:block; margin-top:12px;"><b>Third,</b> in regions where dynamic objects exhibit
+        <b>geometric or motion inconsistencies</b>, the attention maps at certain layers also show
+        <b>incorrect cross-view correspondences</b>.</span>
     </p>
   </section>
+
+  <!-- ============================== METHOD ============================== -->
+  <section id="method" class="sec">
+    <div class="sec-label">Method</div>
+    <h2 class="sec-heading">How it works</h2>
+    <div class="prose">
+      <p>
+        We jointly train a camera-controlled video diffusion model (DiT) and a multi-view tracking
+        module that <strong>shares the query and key features</strong> of the DiT's 3D attention
+        layers. From these shared features the tracking module builds <em>intra-video temporal</em>
+        correlation (for temporal consistency) and <em>inter-video cross-view</em> correlation (for
+        geometric correspondence). We additionally supervise the 3D attention map directly with a
+        cross-entropy <em>multi-view correspondence loss</em>.
+      </p>
+    </div>
+
+    <figure class="cell" style="margin-top:22px;">
+      <div class="slot wide-slot figfit" data-src="assets/architecture.webp" data-path="assets/architecture.webp"></div>
+      <figcaption>Main architecture — features from selected DiT layers are upsampled by a lightweight MLP and correlated into cross-view cost volumes in the multi-view tracking (MVTAP) head; a multi-layer matching loss supervises the diffusion features to respect the 3D scene geometry</figcaption>
+    </figure>
+
+    <div class="steps">
+      <div class="step">
+        <span class="n">1</span>
+        <h4>Improved camera encoding</h4>
+        <p>Condition on the extrinsics <em>and</em> intrinsics of both reference and target views,
+           encoded as dense Pl&uuml;cker ray maps injected into every DiT layer.</p>
+      </div>
+      <div class="step">
+        <span class="n">2</span>
+        <h4>Multi-view tracking head</h4>
+        <p>A transformer head over multi-scale local 4D correlation volumes (from attention query/key
+           similarity) predicts multi-view point tracks, visibility, and confidence.</p>
+      </div>
+      <div class="step">
+        <span class="n">3</span>
+        <h4>Tracking + correspondence loss</h4>
+        <p>Joint objective <em>L</em><sub>diff</sub> + 0.01&middot;<em>L</em><sub>track</sub> +
+           0.01&middot;<em>L</em><sub>corr</sub>: tracking enforces motion fidelity; a cross-entropy
+           loss on the attention map enforces geometric consistency.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== RESULTS TABLE ============================== -->
+  <section id="results" class="sec">
+    <div class="sec-label">Quantitative</div>
+    <h2 class="sec-heading">Results on DAVIS</h2>
+    <p class="sec-lead">
+      We evaluate MVTrack4Gen on DAVIS across visual quality (VBench), geometric consistency
+      (MEt3R and MEt3R-dynamic), and camera accuracy, where it improves <strong>both</strong> backbones
+      on every axis. In each column, the best result is shown in <b>bold</b>, while
+      <span style="color:#1f9d55; font-weight:700">green</span> and
+      <span style="color:#d23b3b; font-weight:700">red</span> indicate a gain or a loss relative to the
+      corresponding backbone. This is a condensed view of the results; the full table is provided in the paper.
+    </p>
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th class="method">Method</th>
+            <th class="metric">Subj. Cons. &uarr;</th>
+            <th class="metric">Imaging &uarr;</th>
+            <th class="metric">Motion Smooth. &uarr;</th>
+            <th class="metric">MEt3R &darr;</th>
+            <th class="metric">MEt3R-dyn &darr;</th>
+            <th class="metric">mRotErr &darr;</th>
+            <th class="metric">mTransErr &darr;</th>
+            <th class="metric">mCamMC &darr;</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="grouprow"><td colspan="9">Explicit 3D Lifting</td></tr>
+          <tr><td class="method">GEN3C</td><td>0.856</td><td>0.582</td><td>0.980</td><td>0.290</td><td>0.328</td><td>2.538</td><td>0.127</td><td>0.163</td></tr>
+          <tr><td class="method">TrajectoryCrafter</td><td>0.847</td><td>0.550</td><td>0.970</td><td>0.291</td><td>0.306</td><td>10.126</td><td>0.190</td><td>0.355</td></tr>
+          <tr><td class="method">CogNVS</td><td>0.811</td><td>0.530</td><td>0.978</td><td>0.333</td><td>0.346</td><td>10.439</td><td>0.228</td><td>0.400</td></tr>
+          <tr><td class="method">NeoVerse</td><td>0.858</td><td>0.591</td><td>0.983</td><td>0.302</td><td>0.323</td><td>4.705</td><td>0.159</td><td>0.228</td></tr>
+          <tr class="grouprow"><td colspan="9">Camera Conditioning Only</td></tr>
+          <tr><td class="method">ReCamMaster</td><td>0.904</td><td>0.652</td><td>0.985</td><td>0.337</td><td>0.369</td><td>3.660</td><td>0.113</td><td>0.169</td></tr>
+          <tr><td class="method">ReDirector</td><td>0.897</td><td>0.680</td><td>0.985</td><td>0.318</td><td>0.395</td><td style="font-weight:800;">1.714</td><td>0.086</td><td>0.109</td></tr>
+          <tr class="grouprow"><td colspan="9">Ours</td></tr>
+          <tr class="ours-row"><td class="method">MVTrack4Gen<sub>ReCamMaster</sub></td><td>0.892 <span class="dn">&minus;.012</span></td><td>0.685 <span class="dp">+.033</span></td><td>0.984 <span class="dn">&minus;.001</span></td><td>0.274 <span class="dp">&minus;.063</span></td><td class="best">0.287 <span class="dp">&minus;.082</span></td><td>1.858 <span class="dp">&minus;1.802</span></td><td>0.100 <span class="dp">&minus;.013</span></td><td>0.125 <span class="dp">&minus;.044</span></td></tr>
+          <tr class="ours-row"><td class="method">MVTrack4Gen<sub>ReDirector</sub></td><td class="best">0.905 <span class="dp">+.008</span></td><td class="best">0.687 <span class="dp">+.007</span></td><td class="best">0.986 <span class="dp">+.001</span></td><td class="best">0.267 <span class="dp">&minus;.051</span></td><td>0.349 <span class="dp">&minus;.036</span></td><td>1.718 <span class="dn">+.004</span></td><td class="best">0.073 <span class="dp">&minus;.013</span></td><td class="best">0.097 <span class="dp">&minus;.012</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+
+  <!-- ============================== GEOMETRIC VISUALIZER (4D point cloud) ============================== -->
+  <section id="pointcloud" class="sec">
+    <div class="sec-label">Interactive &middot; Depth Anything 3 lift</div>
+    <h2 class="sec-heading">Geometric 4D point cloud</h2>
+    <p class="sec-lead">
+      The reference and the generated novel view, lifted into <strong>one shared 3D scene at the same
+      timestamp</strong>. The clouds follow the videos on the left — <strong>drag to orbit, scroll to
+      zoom</strong>. Toggle the generated cloud, per-view color, and the camera frustums.
+    </p>
+    <p class="legend"><span class="ref">&#9632; Reference Video</span><span class="gen">&#9632; Generated Video</span></p>
+    <div class="pc4d">
+      <div class="pc4d-left">
+        <div class="pc4d-models" id="pc4d-models"></div>
+        <figure class="cell">
+          <div class="slot vidfit" id="pc4d-ref" data-src="videos/compare/bear_cam02/reference.mp4" style="aspect-ratio:832/480;"></div>
+          <figcaption class="cap-ref">Reference Video</figcaption>
+        </figure>
+        <figure class="cell ours">
+          <div class="slot vidfit" id="pc4d-gen" data-src="videos/compare/bear_cam02/ours_recammaster.mp4" style="aspect-ratio:832/480;"></div>
+          <figcaption id="pc4d-gen-cap">MVTrack4Gen<sub>ReCamMaster</sub> &mdash; generated</figcaption>
+        </figure>
+      </div>
+      <div class="pc4d-right">
+        <div class="pc4d-toggles">
+          <button class="pc-tog active" data-tog="gen">Generated cloud</button>
+          <button class="pc-tog" data-tog="tint">Ref / Gen color</button>
+          <button class="pc-tog" data-tog="cam">Cameras</button>
+          <button class="pc-tog" data-tog="trk">Point tracks</button>
+        </div>
+        <div class="pc4d-canvas" id="pc4d-canvas">
+          <div class="pc4d-status" id="pc4d-status">loading 3D…</div>
+        </div>
+        <p class="pc-hint">Depth Anything 3 &middot; joint reference + generated &middot; per-frame, synced to the videos &middot; toggle <strong>Point tracks</strong> to lift the dynamic-object tracks into 3D (and onto both videos)</p>
+      </div>
+    </div>
+    <div class="pc4d-scenes" id="pc4d-scenes"></div>
+  </section>
+
+  <!-- ============================== COMPARISON vs BASELINES ============================== -->
+  <section id="compare" class="sec">
+    <div class="sec-label">Comparison</div>
+    <h2 class="sec-heading">vs. baselines on DAVIS</h2>
+    <p class="sec-lead">
+      Against <em>Explicit 3D Lifting</em> (GEN3C, NeoVerse, TrajectoryCrafter) and
+      <em>Camera-Conditioning-Only</em> (ReDirector) methods. Pick a scene below.
+    </p>
+    <div class="scene-stage"><div class="compare-card"><div id="compare-stage"></div></div></div>
+    <div class="scene-tabs" id="compare-tabs"></div>
+  </section>
+
+  <!-- ============================== iPHONE QUALITATIVE — WIP, commented out (resume tomorrow) ============================== -->
+  <!-- TODO: rebuild iPhone per-method from ORIGINAL eval dirs (not strip-split). Mapping per
+       evaluation_modules/concat_iphone_row_framenum.py: row = first T=min-length frames of each
+       method's full video; chunk N = frames [N*81 : N*81+81]. Cells/roots in
+       evaluation_bash/.../concat_iphone_row_framenum.sh (OURS_RECAM step0004800, OURS_REDIR step0011750). -->
+  <!--
+  <section id="iphone" class="sec">
+    <h2 class="sec-heading">vs. baselines on iPhone</h2>
+    <p class="sec-lead">
+      Per-method comparison on casual iPhone captures &mdash; the reference (<code>cond</code>), baselines,
+      <strong>MVTrack4Gen</strong> on both backbones, and the ground-truth <code>target</code> view. Pick a scene below.
+    </p>
+    <div class="scene-stage"><div class="compare-card"><div id="iphone-stage"></div></div></div>
+    <div class="scene-tabs" id="iphone-tabs"></div>
+  </section>
+  -->
+
+  <!-- ============================== DIVERSE CAMERA ============================== -->
+  <section id="diverse" class="sec">
+    <div class="sec-label">Camera control</div>
+    <h2 class="sec-heading">Diverse camera trajectories</h2>
+    <p class="sec-lead">
+      The same reference video rendered by <strong>MVTrack4Gen<sub>ReCamMaster</sub></strong> along
+      <strong>diverse user-specified camera trajectories</strong> &mdash; shown all at once.
+    </p>
+    <div class="scene-stage"><div class="compare-card"><div id="diverse-stage"></div></div></div>
+    <div class="scene-tabs" id="diverse-tabs" style="display:none;"></div>
+  </section>
+
+  <!-- ============================== ATTENTION FINDING ============================== -->
+  <section id="attention" class="sec">
+    <div class="sec-label">Key Finding</div>
+    <h2 class="sec-heading">Emergent correspondence in attention</h2>
+    <p class="sec-lead">
+      For the same query point on a generated frame, baselines attend to the wrong region in the
+      reference frame, while MVTrack4Gen attends to the correct correspondence on the dynamic object —
+      which is what keeps motion and geometry consistent across views.
+    </p>
+    <figure class="cell">
+      <div class="slot wide-slot figfit" data-src="assets/attention.webp" data-path="assets/attention.webp"></div>
+    </figure>
+  </section>
+
+  <!-- ============================== BIBTEX ============================== -->
+  <section id="bibtex" class="sec">
+    <div class="sec-label">Citation</div>
+    <h2 class="sec-heading">BibTeX</h2>
+    <div class="bib-wrap">
+<pre class="bib"><code></code></pre>
+      <button class="copy-btn" id="copy-bib">Copy</button>
+    </div>
+  </section>
+
 </main>
 
 <footer>
   &copy; MVTrack4Gen &middot; KAIST AI &amp; Sony AI
 </footer>
 
+<script>
+// ============================ slot filling ============================
+const IMG_RE = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
+function placeholderHTML(path){
+  return '<div class="ph">' +
+    '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="2" y="5" width="20" height="14" rx="2"></rect><path d="M10 9l5 3-5 3z"></path></svg>' +
+    (path ? '<span class="ph-path">' + path + '</span>' : '') +
+    '<span class="ph-hint">empty &mdash; drop a file here</span>' +
+    '</div>';
+}
+
+function fillSlot(el){   // images + placeholders only (videos go through mountVideoSlot)
+  const src  = (el.dataset.src || '').trim();
+  const path = (el.dataset.path || '').trim();
+  el.classList.remove('is-loading');
+  if (!src){ el.classList.remove('filled'); el.innerHTML = placeholderHTML(path); return; }
+  el.classList.add('filled');
+  el.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = src; img.loading = 'lazy'; img.alt = '';
+  el.appendChild(img);
+}
+
+// Download a video via XHR so we can show a numeric % + a top-down progress bar,
+// then hand the blob to <video>. Resolves to the <video> on success, else null.
+// Global SEQUENTIAL download queue: one video at a time, in DOM (top-to-bottom) order.
+// Loading many videos in parallel saturates the browser's ~6-connections-per-host limit
+// and stalls some downloads forever — so we serialize them.
+// Viewport-priority concurrent loader: up to POOL_SIZE downloads at once, always
+// starting the pending video NEAREST the viewport (what's on screen loads first).
+// Bounded concurrency avoids the ~6-connection-per-host stall; priority + parallel
+// keeps it fast and never serializes into a single slow chain that looks "stuck".
+const POOL_SIZE = 16;           // concurrent video downloads (HTTP/2 on GitHub Pages multiplexes, no 6/host limit)
+const _pending = [];            // [{ slot, run }]
+let _active = 0;
+function _viewportDist(slot){
+  const r = slot.getBoundingClientRect(), vh = window.innerHeight || 800;
+  const center = (r.top + r.bottom) / 2;
+  const onScreen = r.bottom > 0 && r.top < vh;
+  return Math.abs(center - vh / 2) + (onScreen ? 0 : 1e6);   // on-screen slots win
+}
+let _geoBusy = false;                 // when true, pause NEW gallery downloads so the 3D data gets the bandwidth
+function _pumpPool(){
+  // drop tasks whose slot left the DOM or was cancelled (e.g. after a tab/scene switch)
+  for (let i = _pending.length - 1; i >= 0; i--){ const sl = _pending[i].slot; if (sl._cancelled || !sl.isConnected) _pending.splice(i, 1); }
+  const cap = _geoBusy ? 0 : POOL_SIZE;
+  while (_active < cap && _pending.length){
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < _pending.length; i++){ const d = _viewportDist(_pending[i].slot); if (d < bd){ bd = d; bi = i; } }
+    const t = _pending.splice(bi, 1)[0];
+    _active++;
+    Promise.resolve(t.run()).catch(()=>{}).finally(() => { _active--; _pumpPool(); });
+  }
+}
+function enqueueDownload(slot, run){ _pending.push({ slot, run }); _pumpPool(); }
+window.__pauseGallery = (b) => { _geoBusy = !!b; if (!_geoBusy) _pumpPool(); };   // the 3D loader calls this to grab bandwidth
+window.addEventListener('scroll', () => _pumpPool(), { passive: true });   // re-prioritize on scroll
+
+// Safety net for many-video pages: every few seconds re-kick the queue and re-load
+// any video slot that failed (fell back to a placeholder), up to a few attempts.
+// Fast queue watchdog: keep the pool moving, and whenever it goes idle while some video
+// slots are still unfinished (failed placeholder OR stuck loading), re-load them quickly.
+// 1s watchdog: keep the pool moving; restart any video whose buffer has STALLED, and
+// re-load any slot that failed — so a stuck download always comes back on its own.
+function queueWatchdog(){
+  _pumpPool();
+  const now = Date.now();
+  document.querySelectorAll('.slot[data-src]').forEach(slot => {
+    const src = (slot.dataset.src || '').trim();
+    if (!src || IMG_RE.test(src) || !slot.isConnected) return;
+    if (slot.querySelector('.ph')){                          // failed -> re-load when the pool has room
+      if (_active < POOL_SIZE){
+        slot._rescues = (slot._rescues || 0) + 1; if (slot._rescues > 12) return;
+        slot._cancelled = false;
+        mountVideoSlot(slot, slot.dataset.ar || null).then(v => {
+          if (!v) return; try { v.currentTime = 0; } catch(e){}
+          const r = slot.getBoundingClientRect();
+          if (r.top < window.innerHeight && r.bottom > 0) v.play().catch(()=>{});
+        });
+      }
+      return;
+    }
+    const v = slot._video;
+    if (slot.classList.contains('is-loading') && v && v.readyState < 3){
+      let buf = 0; try { buf = v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0; } catch(e){}
+      if (buf > (v._lastBuf || 0) + 1e-3){ v._lastBuf = buf; v._lastBufT = now; }       // still progressing
+      else if (now - (v._lastBufT || slot._loadStart || now) > 4000){                    // stalled > 4s -> kick it
+        v._lastBufT = now; v._kicks = (v._kicks || 0) + 1;
+        try { v.load(); } catch(e){}                                                     // restart buffering
+        if (v._kicks > 4){ v._kicks = 0; slot._cancelled = false; mountVideoSlot(slot, slot.dataset.ar || null).then(()=>{}); }
+      }
+    }
+  });
+}
+setInterval(queueWatchdog, 1000);
+
+// image safety net: retry any image that failed to load or rendered blank (black)
+function _armImg(img){
+  if (img._armed) return; img._armed = true;
+  img.addEventListener('error', () => {
+    if ((img._tries = (img._tries || 0) + 1) > 6) return;
+    const base = (img.getAttribute('src') || '').split('?')[0];
+    if (base) setTimeout(() => { img.src = base + '?r=' + img._tries; }, 1500);
+  });
+}
+setInterval(() => {
+  document.querySelectorAll('img').forEach(img => {
+    _armImg(img);
+    if (img.complete && img.naturalWidth === 0 && (img._tries || 0) <= 6){   // loaded but blank -> reload
+      img._tries = (img._tries || 0) + 1;
+      const base = (img.getAttribute('src') || '').split('?')[0];
+      if (base) img.src = base + '?r=' + img._tries;
+    }
+  });
+}, 4000);
+
+function mountVideoSlot(slot, ar){
+  const src  = (slot.dataset.src  || '').trim();
+  const path = (slot.dataset.path || '').trim();
+  slot.classList.add('filled', 'is-loading', 'vidfit');
+  slot._loadStart = Date.now();
+  if (ar) { slot.style.aspectRatio = ar; slot.dataset.ar = ar; }      // slot ratio == video ratio -> no letterbox
+  slot.innerHTML = '';
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.autoplay = false; v.playsInline = true; v.preload = 'none';
+  v.src = src;
+  slot.appendChild(v);
+  const spin = document.createElement('div');
+  spin.className = 'vspin';
+  spin.innerHTML = '<span class="pct">loading…</span>';
+  slot.appendChild(spin);
+  const bar = document.createElement('div');
+  bar.className = 'vbar';
+  bar.innerHTML = '<span></span>';
+  slot.appendChild(bar);
+  const pctEl = spin.querySelector('.pct'), barFill = bar.querySelector('span');
+  const setPct = (p) => { pctEl.textContent = 'loading… ' + p + '%'; barFill.style.width = p + '%'; };
+  slot._video = v;
+  // resolves (for coordinatePlay) when this slot's video is playable (or fails)
+  return new Promise((resolve) => {
+    enqueueDownload(slot, () => new Promise((taskDone) => {
+      let settled = false;
+      const free = (ok) => { if (settled) return; settled = true; resolve(ok ? v : null); taskDone(); };   // frees the pool
+      if (slot._cancelled || !slot.isConnected){ slot.classList.remove('is-loading'); free(false); return; }
+      const onProg = () => { try { if (v.duration && v.buffered.length) setPct(Math.min(99, Math.round(v.buffered.end(v.buffered.length - 1) / v.duration * 100))); } catch(e){} };
+      const cleanup = () => { clearTimeout(hard); v.removeEventListener('progress', onProg); v.removeEventListener('loadeddata', ready); v.removeEventListener('canplay', ready); v.removeEventListener('error', err); };
+      const ready = () => { cleanup(); slot.classList.remove('is-loading'); free(true); };   // first frame -> show video + free pool (releases the connection so the 3D can load)
+      const err   = () => { cleanup(); slot.classList.remove('is-loading', 'filled', 'vidfit'); slot.style.aspectRatio = ''; slot.innerHTML = placeholderHTML(path); free(false); };
+      v.addEventListener('progress', onProg);
+      v.addEventListener('loadeddata', ready, { once:true });
+      v.addEventListener('canplay', ready, { once:true });
+      v.addEventListener('error', err, { once:true });
+      const hard = setTimeout(() => { if (settled) return; if (v.readyState >= 1) ready(); else err(); }, 35000);
+      setPct(0);
+      v.preload = 'auto'; v.load();
+    }));
+  });
+}
+
+// Wait for EVERY video in a grid to finish downloading, then play them in sync —
+// and only while the grid is on screen (pauses when scrolled away).
+function coordinatePlay(stage, promises){
+  Promise.all(promises).then((results) => {
+    stage.querySelectorAll('.slot.is-loading').forEach(s => s.classList.remove('is-loading'));
+    const vids = results.filter(Boolean);
+    if (!vids.length) return;
+    const playAll  = () => { vids.forEach(v => { try { v.currentTime = 0; } catch(e){} }); vids.forEach(v => v.play().catch(()=>{})); };  // ALWAYS start together from frame 0
+    const pauseAll = () => vids.forEach(v => v.pause());
+    if (stage._io) stage._io.disconnect();
+    stage._io = new IntersectionObserver(es => { es[0].isIntersecting ? playAll() : pauseAll(); }, { threshold: 0.2 });
+    stage._io.observe(stage);
+    // keep every video locked in sync (resync any that drifts from the first)
+    if (stage._sync) clearInterval(stage._sync);
+    stage._sync = setInterval(() => {
+      if (!vids[0] || vids[0].paused) return;
+      const t = vids[0].currentTime;
+      for (let i = 1; i < vids.length; i++){ if (Math.abs(vids[i].currentTime - t) > 0.18){ try { vids[i].currentTime = t; } catch(e){} } }
+    }, 1500);
+    const r = stage.getBoundingClientRect();
+    if (r.top < window.innerHeight && r.bottom > 0) playAll();
+  });
+}
+
+// ============================ scene galleries ============================
+// Data-driven. Each gallery = list of scenes + ordered columns (role + caption).
+// A cell loads <base>/<scene>/<role>.mp4 . `ar` = exact video aspect (no letterbox).
+const GALLERIES = {
+    compare: {
+    // 4 x 2 grid (row-major). Rightmost column = ours (ReCamMaster top, ReDirector bottom).
+    tabs: 'compare-tabs', stage: 'compare-stage', base: 'videos/compare', grid: 'cols-4', flat: true, ar: '832 / 480', thumbBase: 'assets/pointcloud/thumbs/',
+    scenes: [
+      { id: 'bear_cam02', label: 'Bear' },
+      { id: 'bmx-bumps_cam05', label: 'Bmx-Bumps' },
+      { id: 'breakdance-flare_cam08', label: 'Breakdance-Flare' },
+      { id: 'car-roundabout_cam02', label: 'Car-Roundabout' },
+      { id: 'car-shadow_cam02', label: 'Car-Shadow' },
+      { id: 'car-turn_cam10', label: 'Car-Turn' },
+      { id: 'hike_cam02', label: 'Hike' },
+      { id: 'horsejump-high_cam02', label: 'Horsejump-High' },
+      { brk: true },
+      { id: 'kite-walk_cam09', label: 'Kite-Walk' },
+      { id: 'mallard-fly_cam03', label: 'Mallard-Fly' },
+      { id: 'mallard-water_cam10', label: 'Mallard-Water' },
+      { id: 'motorbike_cam10', label: 'Motorbike' },
+      { id: 'paragliding_cam02', label: 'Paragliding' },
+      { id: 'parkour_cam09', label: 'Parkour' },
+      { id: 'soccerball_cam08', label: 'Soccerball' },
+      { id: 'swing_cam02', label: 'Swing' },
+      { id: 'train_cam01', label: 'Train' },
+    ],
+    cols: [
+      { role: 'reference',        cap: 'Reference Video',                         cls: 'cap-ref' },
+      { role: 'gen3c',            cap: 'GEN3C' },
+      { role: 'recammaster',      cap: 'ReCamMaster' },
+      { role: 'ours_recammaster', cap: 'MVTrack4Gen<sub>ReCamMaster</sub>', ours: true },
+      { role: 'neoverse',         cap: 'NeoVerse' },
+      { role: 'trajcrafter',       cap: 'TrajectoryCrafter' },
+      { role: 'redirector',       cap: 'ReDirector' },
+      { role: 'ours_redirector',  cap: 'MVTrack4Gen<sub>ReDirector</sub>',  ours: true },
+    ],
+  },
+  /* iphone gallery — WIP, commented out (resume tomorrow); section HTML is also commented out
+  iphone: {
+    tabs: 'iphone-tabs', stage: 'iphone-stage', base: 'videos/iphone', grid: 'cols-5', flat: true, ar: '312 / 426', thumbBase: 'assets/pointcloud/thumbs/iphone_',
+    scenes: [
+      { id: 'block',          label: 'Block' },
+      { id: 'paper-windmill', label: 'Paper-Windmill' },
+      { id: 'spin',           label: 'Spin' },
+      { id: 'teddy',          label: 'Teddy' },
+    ],
+    cols: [
+      { role: 'reference',        cap: 'Reference (cond)',                       cls: 'cap-ref' },
+      { role: 'gen3c',            cap: 'GEN3C' },
+      { role: 'cognvs',           cap: 'CogNVS' },
+      { role: 'trajcrafter',      cap: 'TrajectoryCrafter' },
+      { role: 'neoverse',         cap: 'NeoVerse' },
+      { role: 'recammaster',      cap: 'ReCamMaster' },
+      { role: 'redirector',       cap: 'ReDirector' },
+      { role: 'ours_recammaster', cap: 'MVTrack4Gen<sub>ReCamMaster</sub>', ours: true },
+      { role: 'ours_redirector',  cap: 'MVTrack4Gen<sub>ReDirector</sub>',  ours: true },
+      { role: 'target',           cap: 'Target (GT)',                           cls: 'cap-ref' },
+    ],
+  },
+  */
+  diverse: {
+    tabs: 'diverse-tabs', stage: 'diverse-stage', base: 'videos/diverse', grid: 'cols-4', flat: true, ar: '832 / 480',
+    scenes: [
+      { id: 'rollerblade', label: 'Rollerblade' },
+    ],
+    cols: [
+      { role: 'cam01', cap: 'cam 1', ours: true }, { role: 'cam02', cap: 'cam 2', ours: true },
+      { role: 'cam03', cap: 'cam 3', ours: true }, { role: 'cam04', cap: 'cam 4', ours: true },
+    ],
+  },
+};
+
+function cellHTML(base, scene, col){
+  const cls = 'cell' + (col.ours ? ' ours' : '');
+  const capCls = col.cls ? (' class="' + col.cls + '"') : '';
+  return '<figure class="' + cls + '">' +
+           '<div class="slot" data-src="' + base + '/' + scene + '/' + col.role + '.mp4" ' +
+                'data-path="' + base + '/' + scene + '/' + col.role + '.mp4"></div>' +
+           '<figcaption' + capCls + '>' + col.cap + '</figcaption>' +
+         '</figure>';
+}
+
+function renderGallery(cfg, sceneId){
+  const stage = document.getElementById(cfg.stage);
+  // view switch: cancel + abort the previous scene's in-flight / pending downloads so the
+  // queue instantly refocuses on the new (on-screen) videos
+  stage.querySelectorAll('.slot').forEach(s => { s._cancelled = true; if (s._video) { try { s._video.pause(); s._video.removeAttribute('src'); s._video.load(); } catch(e){} } });
+  const cells = cfg.cols.map(c => cellHTML(cfg.base, sceneId, c)).join('');
+  stage.innerHTML = '<div class="vgrid ' + cfg.grid + '">' + cells + '</div>';
+  const promises = [];
+  stage.querySelectorAll('.slot').forEach(s => {
+    const src = (s.dataset.src || '').trim();
+    if (src && !IMG_RE.test(src)) promises.push(mountVideoSlot(s, cfg.ar));
+    else fillSlot(s);
+  });
+  coordinatePlay(stage, promises);
+}
+
+function setupGallery(cfg){
+  const tabs = document.getElementById(cfg.tabs);
+  const tb = cfg.thumbBase || '';
+  tabs.innerHTML = cfg.scenes.map((s, i) =>
+    s.brk ? '<div class="pc-row-break"></div>' :
+    '<button class="pc-scene' + (i === 0 ? ' active' : '') + '" data-id="' + s.id + '">' +
+    (tb ? '<img src="' + tb + s.id + '.webp" alt="" loading="eager" fetchpriority="high">' : '') +
+    '<span>' + s.label + '</span></button>'
+  ).join('');
+  tabs.querySelectorAll('.pc-scene').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabs.querySelectorAll('.pc-scene').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderGallery(cfg, btn.dataset.id);
+    });
+  });
+  // render every gallery now so ALL videos (incl. below the fold) start loading — the
+  // viewport-priority pool just loads the on-screen ones first; the rest keep loading in bg.
+  renderGallery(cfg, cfg.scenes[0].id);
+}
+
+// preload the 3D scene thumbnails FIRST (before the gallery videos) so the scene picker is ready
+['bear_cam02','bear_cam05','boat_cam06','breakdance-flare_cam08'].forEach(id => { const im = new Image(); try { im.fetchPriority = 'high'; } catch(e){} im.src = 'assets/pointcloud/thumbs/' + id + '.webp'; });
+['apple','spin','teddy','block','paper-windmill'].forEach(id => { const im = new Image(); try { im.fetchPriority = 'high'; } catch(e){} im.src = 'assets/thumbs/iphone/' + id + '.webp'; });
+
+Object.values(GALLERIES).forEach(setupGallery);
+
+// fill the static figure slots (teaser / architecture / attention) only
+document.querySelectorAll('.slot.figfit').forEach(fillSlot);
+
+// ============================ scroll reveal (staggered) ============================
+(function(){
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      const d = +(e.target.dataset.rd || 0);
+      setTimeout(() => e.target.classList.add('is-visible'), d);
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+  const arm = (el, d) => { el.classList.add('reveal'); if (d) el.dataset.rd = d; io.observe(el); };
+
+  // single elements reveal straight away
+  document.querySelectorAll(
+    '.title,.authors,.affil,.corr,.links-row,.tldr,.sec-label,.sec-heading,.sec-lead,' +
+    '.abstract,.table-wrap,.pc-stage,.bib-wrap,.scene-tabs'
+  ).forEach(el => arm(el, 0));
+  // grouped cards reveal with a stagger
+  document.querySelectorAll('.stat-strip').forEach(g => [...g.children].forEach((c,i) => arm(c, i*70)));
+  document.querySelectorAll('.contrib').forEach(g => [...g.children].forEach((c,i) => arm(c, i*90)));
+  document.querySelectorAll('.steps').forEach(g => [...g.children].forEach((c,i) => arm(c, i*80)));
+  // figure cards (teaser / architecture / attention)
+  document.querySelectorAll('.figfit').forEach(s => { const f = s.closest('.cell'); if (f) arm(f, 0); });
+})();
+
+// ============================ nav depth on scroll ============================
+(function(){
+  const nav = document.querySelector('.topnav');
+  const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
+
+// ============================ click-to-zoom lightbox (images + videos) ============================
+// COPY (cloneNode) the clicked grid <video> into the overlay — the original is NEVER touched
+// (so it can't disappear or stack). The clone shares the same file URL, so it shows from the
+// browser cache (no real re-download), and a canvas snapshot is used as its poster for an
+// instant frame. Closing just removes the clone.
+(function(){
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.innerHTML = '<button class="lb-close" aria-label="close">&times;</button><img alt="">';
+  document.body.appendChild(lb);
+  const lbImg = lb.querySelector('img');
+  let clone = null;
+  const snap = (video) => {
+    try { const c = document.createElement('canvas'); c.width = video.videoWidth || 832; c.height = video.videoHeight || 480;
+      c.getContext('2d').drawImage(video, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.82); } catch(e){ return ''; }
+  };
+  const close = () => {
+    lb.classList.remove('open');
+    if (clone){ try { clone.pause(); } catch(e){} clone.remove(); clone = null; }
+    lbImg.removeAttribute('src');
+  };
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.lb-close')){ close(); return; }
+    const im = e.target.closest('.slot.figfit img');
+    if (im){ close(); lbImg.style.display = 'block'; lbImg.src = im.currentSrc || im.src; lb.classList.add('open'); return; }
+    const vid = e.target.closest('.slot video');
+    if (vid && vid !== clone){
+      close();                                    // remove any previous clone (no stacking)
+      lbImg.style.display = 'none';
+      clone = vid.cloneNode(false);               // copy (same URL -> from cache, original untouched)
+      clone.muted = true; clone.loop = true; clone.playsInline = true; clone.controls = true; clone.classList.add('lb-zoomed');
+      const p = snap(vid); if (p) clone.poster = p;   // show the frame instantly
+      lb.appendChild(clone);
+      try { clone.currentTime = vid.currentTime || 0; } catch(e){}
+      clone.play().catch(()=>{});
+      lb.classList.add('open'); return;
+    }
+  });
+  // clicking the backdrop (outside the video), the × button, or Esc closes
+  lb.addEventListener('click', (e) => { if (e.target === lb || e.target === lbImg) close(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+})();
+
+// ============================ copy BibTeX ============================
+const btn = document.getElementById('copy-bib');
+if (btn) btn.addEventListener('click', () => {
+  const txt = document.querySelector('.bib code').innerText;
+  navigator.clipboard.writeText(txt).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  });
+});
+</script>
+
+<!-- ============================ geometric visualizer (three.js 4D dual cloud) ============================ -->
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const REF_RGB = [31, 157, 85];     // reference tint (green)  ~ var(--ref)
+const GEN_RGB = [210, 59, 59];     // generated tint (red)    ~ var(--gen)
+const REF_COL = 0x1f9d55, GEN_COL = 0xd23b3b;
+const MAXN = 50000;                 // per-frame per-view render cap (paragliding/rollerblade densified to 45k)
+const SCENES = [
+  { id:'bear_cam02', label:'Bear' },
+  { id:'horsejump-high_cam01', label:'Horsejump-High' },
+  { id:'dog-agility_cam04', label:'Dog-Agility' },
+  { id:'car-shadow_cam02', label:'Car-Shadow' },
+  { id:'breakdance-flare_cam08', label:'Breakdance-Flare' },
+  { id:'swing_cam02', label:'Swing' },
+  { brk:true },
+  { id:'hike_cam02', label:'Hike' },
+  { id:'mallard-fly_cam03', label:'Mallard-Fly' },
+  { id:'paragliding_cam02', label:'Paragliding' },
+  { id:'boat_cam06', label:'Boat' },
+  { id:'mallard-water_cam10', label:'Mallard-Water' },
+  { id:'rollerblade_cam01', label:'Rollerblade' },
+  { id:'soccerball_cam08', label:'Soccerball' },
+  { id:'train_cam01', label:'Train' },
+];
+const MODELS = [
+  { id:'recam',      label:'MVTrack4Gen (ReCamMaster)', gen:'ours_recammaster', cap:'MVTrack4Gen<sub>ReCamMaster</sub>' },
+  { id:'redirector', label:'MVTrack4Gen (ReDirector)',  gen:'ours_redirector',  cap:'MVTrack4Gen<sub>ReDirector</sub>' },
+];
+
+const statusEl = document.getElementById('pc4d-status');
+const canvasWrap = document.getElementById('pc4d-canvas');
+const scenesEl = document.getElementById('pc4d-scenes');
+const modelsEl = document.getElementById('pc4d-models');
+const genCapEl = document.getElementById('pc4d-gen-cap');
+const setStatus = (m) => { if (statusEl){ statusEl.classList.remove('hidden'); statusEl.textContent = m; } };
+const fail = (m) => { setStatus(m); console.error('[pc4d]', m); };
+
+// ONE combined loader for the whole section: 3D buffers + both videos -> one %.
+function xhrLoad(url, type, loaded, total, i, onPct){
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+    (function go(){
+      attempt++;
+      const x = new XMLHttpRequest();
+      let last = Date.now(), watch = null, done = false;
+      const stop = () => { done = true; if (watch) clearInterval(watch); };
+      const retry = () => { if (done) return; stop(); try { x.abort(); } catch(e){} if (attempt < 5) go(); else reject('failed'); };  // stalled/failed -> retry, never hang
+      x.open('GET', url, true); x.responseType = type;
+      x.onprogress = (e) => { last = Date.now(); if (e.lengthComputable){ loaded[i] = e.loaded; total[i] = e.total; onPct(); } };
+      x.onload = () => { if (done) return; stop(); if (x.status >= 200 && x.status < 300){ if (total[i]) loaded[i] = total[i]; onPct(); resolve(x.response); } else retry(); };
+      x.onerror = retry; x.ontimeout = retry;
+      watch = setInterval(() => { if (!done && Date.now() - last > 20000) retry(); }, 3000);
+      x.send();
+    })();
+  });
+}
+
+// ---- module state (three.js built once; scene data swappable) ----
+let scene, renderer, camera, controls, condPts, tarPts, condFr, tarFr, ok3d = false;
+let slices = [], N = 0, frames = [], DEQ = 1, refVid = null, genVid = null, cur = -1, curScene = null, curModel = null, loadToken = 0;
+let trkPts = null, trkData = null, trkK = 0, trkCol = null, showTrk = false;
+let refURL = null, genURL = null, refTrkURL = null, genTrkURL = null;
+const MAXTRK = 700;   // per-view dynamic-object track cap (buffer holds 2*MAXTRK)
+let showGen = true, tint = false, showCam = false;
+const sceneRetries = {};
+const keys = {}; let navActive = false;
+const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _m = new THREE.Vector3(), _up = new THREE.Vector3(0,1,0);
+
+function slotLoading(id){
+  const slot = document.getElementById(id);
+  slot.classList.add('filled', 'is-loading');
+  slot.innerHTML = '<div class="vspin"><span class="pct">loading…</span></div>';
+  return slot.querySelector('.pct');
+}
+function mountVid(slotId, blob){
+  const slot = document.getElementById(slotId); slot.classList.remove('is-loading'); slot.classList.add('filled'); slot.innerHTML = '';
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+  v.src = URL.createObjectURL(blob); slot.appendChild(v); v.load();
+  return v;
+}
+function fillCol(attr, raw, n, tintRGB){
+  const a = attr.array;
+  if (tintRGB){
+    for (let i = 0; i < n*3; i += 3){
+      a[i]   = raw[i]  *0.32 + tintRGB[0]*0.68;
+      a[i+1] = raw[i+1]*0.32 + tintRGB[1]*0.68;
+      a[i+2] = raw[i+2]*0.32 + tintRGB[2]*0.68;
+    }
+  } else { a.set(raw.subarray(0, n*3)); }
+  attr.needsUpdate = true;
+}
+function setFrustum(line, cam){
+  const f = 0.16, ty = Math.tan(cam.fov/2)*f, tx = ty*cam.aspect, R = cam.R, p = cam.pos;
+  const W = (cx, cy, cz) => [ p[0]+R[0]*cx+R[1]*cy+R[2]*cz, p[1]+R[3]*cx+R[4]*cy+R[5]*cz, p[2]+R[6]*cx+R[7]*cy+R[8]*cz ];
+  const cn = [ W(tx,ty,f), W(-tx,ty,f), W(-tx,-ty,f), W(tx,-ty,f) ];
+  const segs = [];
+  cn.forEach(c => { segs.push(p, c); });
+  for (let i = 0; i < 4; i++) segs.push(cn[i], cn[(i+1)%4]);
+  const arr = line.geometry.attributes.position.array;
+  segs.flat().forEach((val, i) => { arr[i] = val; });
+  line.geometry.attributes.position.needsUpdate = true;
+}
+function hsv2(h){   // h 0..6 sextant -> r,g,b 0..255, matches the 2D overlay rainbow hues
+  const c = 0.92, x = c * (1 - Math.abs((h % 2) - 1)); let r, g, b;
+  if (h < 1){ r=c; g=x; b=0; } else if (h < 2){ r=x; g=c; b=0; } else if (h < 3){ r=0; g=c; b=x; }
+  else if (h < 4){ r=0; g=x; b=c; } else if (h < 5){ r=x; g=0; b=c; } else { r=c; g=0; b=x; }
+  const m = 1 - c; return [Math.round((r+m)*255), Math.round((g+m)*255), Math.round((b+m)*255)];
+}
+function setTrackFrame(f){
+  if (!trkPts) return;
+  if (!trkData || !trkK){ trkPts.geometry.setDrawRange(0, 0); return; }
+  const ap = trkPts.geometry.attributes.position.array, ac = trkPts.geometry.attributes.color.array;
+  const base = f * 2 * trkK * 3; let m = 0;
+  for (let i = 0; i < 2 * trkK; i++){
+    const o = base + i * 3, x = trkData[o];
+    if (x === x){   // NaN -> hidden this frame
+      ap[m*3]=x; ap[m*3+1]=trkData[o+1]; ap[m*3+2]=trkData[o+2];
+      ac[m*3]=trkCol[i*3]; ac[m*3+1]=trkCol[i*3+1]; ac[m*3+2]=trkCol[i*3+2]; m++;
+    }
+  }
+  trkPts.geometry.attributes.position.needsUpdate = true;
+  trkPts.geometry.attributes.color.needsUpdate = true;
+  trkPts.geometry.setDrawRange(0, m);
+}
+function setFrame(f){
+  if (!ok3d || !slices[f]) return;
+  const s = slices[f], fr = frames[f];
+  const cp = condPts.geometry.attributes.position.array;
+  for (let i = 0; i < s.condN * 3; i++) cp[i] = s.condPos[i] * DEQ;   // int16 -> world
+  condPts.geometry.attributes.position.needsUpdate = true;
+  fillCol(condPts.geometry.attributes.color, s.condCol, s.condN, tint ? REF_RGB : null);
+  condPts.geometry.setDrawRange(0, s.condN);
+  const tp = tarPts.geometry.attributes.position.array;
+  for (let i = 0; i < s.tarN * 3; i++) tp[i] = s.tarPos[i] * DEQ;
+  tarPts.geometry.attributes.position.needsUpdate = true;
+  fillCol(tarPts.geometry.attributes.color, s.tarCol, s.tarN, tint ? GEN_RGB : null);
+  tarPts.geometry.setDrawRange(0, s.tarN);
+  setFrustum(condFr, fr.condCam); setFrustum(tarFr, fr.tarCam);
+  setTrackFrame(f);
+}
+function initGL(){
+  try {
+    scene = new THREE.Scene(); scene.background = new THREE.Color(0xffffff);
+    renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    canvasWrap.appendChild(renderer.domElement);
+    camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100); camera.position.set(1.7, 1.15, 2.6);
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08; controls.autoRotate = false; controls.target.set(0, 0, 0);
+    controls.enableZoom = false;                       // until loaded: let the mouse wheel scroll the PAGE, not zoom
+    try { renderer.domElement.style.touchAction = 'auto'; } catch(e){}
+    const makeCloud = () => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAXN*3), 3));
+      const c = new THREE.BufferAttribute(new Uint8Array(MAXN*3), 3, true); c.normalized = true; g.setAttribute('color', c);
+      return new THREE.Points(g, new THREE.PointsMaterial({ size:5.5, sizeAttenuation:false, vertexColors:true }));
+    };
+    condPts = makeCloud(); tarPts = makeCloud(); scene.add(condPts, tarPts);
+    condPts.geometry.setDrawRange(0, 0); tarPts.geometry.setDrawRange(0, 0);   // draw nothing until data loads (no black dot at origin)
+    { const g = new THREE.BufferGeometry();   // dynamic-object point-track layer (bigger, on top)
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(2*MAXTRK*3), 3));
+      const c = new THREE.BufferAttribute(new Uint8Array(2*MAXTRK*3), 3, true); c.normalized = true; g.setAttribute('color', c);
+      trkPts = new THREE.Points(g, new THREE.PointsMaterial({ size:9.5, sizeAttenuation:false, vertexColors:true }));
+      trkPts.geometry.setDrawRange(0, 0); trkPts.visible = false; trkPts.renderOrder = 3; scene.add(trkPts); }
+    const makeFrustum = (hex) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16*3), 3));
+      return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color:hex }));
+    };
+    condFr = makeFrustum(REF_COL); tarFr = makeFrustum(GEN_COL); condFr.visible = tarFr.visible = false; scene.add(condFr, tarFr);
+    ok3d = true;
+  } catch (e) { fail('WebGL init failed — ' + (e && e.message || e)); }
+}
+
+// Load a scene's 4D data + ref/gen videos (combined %, xhrLoad retries internally;
+// on total failure it keeps retrying the whole load so it always comes back).
+async function loadScene(sceneId, modelId){
+  modelId = modelId || curModel || MODELS[0].id;
+  const model = MODELS.find(m => m.id === modelId) || MODELS[0];
+  if (sceneId === curScene && modelId === curModel) return;
+  const token = ++loadToken;
+  if (window.__pauseGallery){ window.__pauseGallery(true); clearTimeout(loadScene._t); loadScene._t = setTimeout(() => window.__pauseGallery && window.__pauseGallery(false), 18000); }
+  scenesEl.querySelectorAll('.pc-scene').forEach(b => b.classList.toggle('active', b.dataset.id === sceneId));
+  modelsEl.querySelectorAll('.pc-model').forEach(b => b.classList.toggle('active', b.dataset.id === modelId));
+  if (genCapEl) genCapEl.innerHTML = model.cap + ' &mdash; generated';
+  if (refVid){ try { refVid.pause(); } catch(e){} }
+  if (genVid){ try { genVid.pause(); } catch(e){} }
+  [refURL, genURL, refTrkURL, genTrkURL].forEach(u => { if (u) try { URL.revokeObjectURL(u); } catch(e){} });
+  refURL = genURL = refTrkURL = genTrkURL = null;
+  refVid = genVid = null; cur = -1;
+  const BASE = 'assets/pointcloud/' + sceneId + '_' + modelId + '_4d/';
+  const ASSETS = [
+    { url: BASE + 'pc_pos.bin', type: 'arraybuffer' },
+    { url: BASE + 'pc_col.bin', type: 'arraybuffer' },
+    { url: 'videos/compare/' + sceneId + '/reference.mp4', type: 'blob' },
+    { url: 'videos/compare/' + sceneId + '/' + model.gen + '.mp4', type: 'blob' },
+  ];
+  const loaded = [0,0,0,0], total = [0,0,0,0];
+  const leftPct = ['pc4d-ref', 'pc4d-gen'].map(slotLoading);
+  const onPct = () => {
+    if (token !== loadToken) return;
+    const L = loaded.reduce((s,v)=>s+v,0), T = total.reduce((s,v)=>s+(v||0),0);
+    const txt = 'loading… ' + (T > 0 ? Math.min(99, Math.round(L / T * 100)) : 0) + '%';
+    setStatus(txt); leftPct.forEach(el => { el.textContent = txt; });
+  };
+  onPct();
+  let manifest, posBuf, colBuf, refBlob, genBlob;
+  try {
+    manifest = await fetch(BASE + 'pc_manifest.json').then(r => { if (!r.ok) throw 0; return r.json(); });
+    [posBuf, colBuf, refBlob, genBlob] = await Promise.all(ASSETS.map((a, i) => xhrLoad(a.url, a.type, loaded, total, i, onPct)));
+  } catch (e) {
+    if (token !== loadToken) return;
+    const key = sceneId + '_' + modelId;
+    const n = (sceneRetries[key] = (sceneRetries[key] || 0) + 1);
+    setStatus('loading… (retry ' + n + ')');
+    setTimeout(() => { if (token === loadToken){ curScene = null; loadScene(sceneId, modelId); } }, 2500);   // keep retrying — never give up
+    return;
+  }
+  if (token !== loadToken) return;                 // a newer scene was selected meanwhile
+  curScene = sceneId; curModel = modelId; sceneRetries[sceneId + '_' + modelId] = 0;
+  if (window.__pauseGallery){ clearTimeout(loadScene._t); window.__pauseGallery(false); }   // 3D loaded -> resume gallery downloads
+  if (controls){ controls.enableZoom = true; try { renderer.domElement.style.touchAction = 'none'; } catch(e){} }   // now scroll-to-zoom
+  const pos = new Int16Array(posBuf), col = new Uint8Array(colBuf);
+  DEQ = (manifest.posQuant || 1) / 32767; N = manifest.numFrames; frames = manifest.frames;
+  slices = [];
+  let pPtr = 0, cPtr = 0;
+  for (let f = 0; f < N; f++){
+    const cN = frames[f].condN, tN = frames[f].tarN;
+    const s = { condN:cN, tarN:tN, condPos: pos.subarray(pPtr, pPtr+cN*3), condCol: col.subarray(cPtr, cPtr+cN*3) };
+    pPtr += cN*3; cPtr += cN*3;
+    s.tarPos = pos.subarray(pPtr, pPtr+tN*3); s.tarCol = col.subarray(cPtr, cPtr+tN*3);
+    pPtr += tN*3; cPtr += tN*3; slices.push(s);
+  }
+  // dynamic-object 3D point tracks (optional, small float32 world-coord buffer)
+  trkData = null; trkK = manifest.trackK || 0; trkCol = null;
+  if (trkK > 0){
+    try {
+      trkData = new Float32Array(await fetch(BASE + 'pc_trk.bin').then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }));
+      if (token !== loadToken) return;
+      trkCol = new Uint8Array(2 * trkK * 3);
+      for (let v = 0; v < 2; v++) for (let k = 0; k < trkK; k++){
+        const i = v * trkK + k, c = hsv2((k / trkK) * 6);
+        trkCol[i*3] = c[0]; trkCol[i*3+1] = c[1]; trkCol[i*3+2] = c[2];
+      }
+    } catch(e){ trkData = null; trkK = 0; }
+  }
+  refVid = mountVid('pc4d-ref', refBlob); genVid = mountVid('pc4d-gen', genBlob);
+  refURL = refVid.src; genURL = genVid.src; refTrkURL = genTrkURL = null;
+  if (trkPts) trkPts.visible = showTrk && trkK > 0;
+  setFrame(0); cur = 0;
+  if (showTrk) swap2DTracks(true);
+  statusEl.classList.add('hidden');
+  let pend = 2;
+  const startBoth = () => { if (--pend === 0){ try { refVid.currentTime = 0; genVid.currentTime = 0; } catch(e){} refVid.play().catch(()=>{}); genVid.play().catch(()=>{}); } };
+  [refVid, genVid].forEach(v => { if (v.readyState >= 3) startBoth(); else { v.addEventListener('canplay', startBoth, { once:true }); v.addEventListener('error', startBoth, { once:true }); } });
+}
+
+// ---- toggles (set up once) ----
+document.querySelectorAll('.pc-tog').forEach(b => b.addEventListener('click', () => {
+  const t = b.dataset.tog;
+  if (t === 'gen'){ showGen = !showGen; if (tarPts) tarPts.visible = showGen; }
+  if (t === 'tint'){ tint = !tint; const w = document.querySelector('.pc4d'); if (w) w.classList.toggle('tinted', tint); if (cur >= 0) setFrame(cur); }
+  if (t === 'cam'){ showCam = !showCam; if (condFr){ condFr.visible = showCam; tarFr.visible = showCam && showGen; } }
+  if (t === 'trk'){ showTrk = !showTrk; if (trkPts) trkPts.visible = showTrk && trkK > 0; swap2DTracks(showTrk); }
+  b.classList.toggle('active');
+}));
+function setVidSrc(v, url){
+  if (!v || !url) return;
+  const ct = v.currentTime || 0;
+  v.src = url; v.load();
+  v.addEventListener('loadeddata', () => { try { v.currentTime = ct; } catch(e){} v.play().catch(()=>{}); }, { once:true });
+}
+async function swap2DTracks(on){
+  if (!refVid || !genVid) return;
+  if (on){
+    if (!refTrkURL || !genTrkURL){
+      const model = MODELS.find(m => m.id === curModel) || MODELS[0];
+      const sc = curScene, tok = loadToken;
+      try {
+        const [rb, gb] = await Promise.all([
+          fetch('videos/compare/' + sc + '/reference_track.mp4').then(r => { if (!r.ok) throw 0; return r.blob(); }),
+          fetch('videos/compare/' + sc + '/' + model.gen + '_track.mp4').then(r => { if (!r.ok) throw 0; return r.blob(); }),
+        ]);
+        if (tok !== loadToken || !showTrk) return;
+        refTrkURL = URL.createObjectURL(rb); genTrkURL = URL.createObjectURL(gb);
+      } catch(e){ return; }
+    }
+    setVidSrc(refVid, refTrkURL); setVidSrc(genVid, genTrkURL);
+  } else {
+    setVidSrc(refVid, refURL); setVidSrc(genVid, genURL);
+  }
+}
+
+// ---- WASD + Q/E fly ----
+canvasWrap.addEventListener('pointerenter', () => navActive = true);
+canvasWrap.addEventListener('pointerleave', () => { navActive = false; for (const k in keys) keys[k] = false; });
+window.addEventListener('keydown', (e) => { const k = e.key.toLowerCase(); if (navActive && 'wasdqe'.includes(k)){ keys[k] = true; e.preventDefault(); } });
+window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+function fly(){
+  _m.set(0,0,0);
+  camera.getWorldDirection(_f); _r.crossVectors(_f, camera.up).normalize();
+  if (keys.w) _m.add(_f); if (keys.s) _m.sub(_f);
+  if (keys.d) _m.add(_r); if (keys.a) _m.sub(_r);
+  if (keys.e) _m.add(_up); if (keys.q) _m.sub(_up);
+  if (_m.lengthSq() > 0){ _m.normalize().multiplyScalar(0.035); camera.position.add(_m); controls.target.add(_m); }
+}
+function resize(){
+  const w = canvasWrap.clientWidth, h = canvasWrap.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+function tick(){
+  requestAnimationFrame(tick);
+  fly();
+  if (refVid && refVid.duration && !refVid.paused){
+    const f = Math.min(N-1, Math.max(0, Math.floor(refVid.currentTime / refVid.duration * N)));
+    if (f !== cur){ cur = f; setFrame(f); }
+  }
+  tarFr.visible = showCam && showGen;
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ---- scene thumbnails ----
+scenesEl.innerHTML = SCENES.map((s, i) =>
+  s.brk ? '<div class="pc-row-break"></div>' :
+  '<button class="pc-scene' + (i===0?' active':'') + '" data-id="' + s.id + '">' +
+  '<img src="assets/pointcloud/thumbs/' + s.id + '.webp" alt="" loading="eager" fetchpriority="high"><span>' + s.label + '</span></button>'
+).join('');
+scenesEl.querySelectorAll('.pc-scene').forEach(b => b.addEventListener('click', () => loadScene(b.dataset.id, curModel)));
+
+// ---- model toggle (ReCamMaster / ReDirector) ----
+modelsEl.innerHTML = MODELS.map((m, i) =>
+  '<button class="pc-model' + (/_base$/.test(m.id) ? ' bb' : '') + (i === 0 ? ' active' : '') + '" data-id="' + m.id + '">' + m.label + '</button>'
+).join('');
+modelsEl.querySelectorAll('.pc-model').forEach(b => b.addEventListener('click', () => loadScene(curScene || SCENES[0].id, b.dataset.id)));
+
+// ---- init: build GL + render loop now; load the 3D only when its section is reached
+// (thumbnails are already in the DOM and load instantly; the heavy 3D loads last) ----
+initGL();
+if (ok3d){ new ResizeObserver(resize).observe(canvasWrap); resize(); tick(); }
+const pcSec = document.getElementById('pointcloud');
+let pcStarted = false;
+const pcIO = new IntersectionObserver(es => {
+  if (es[0].isIntersecting && !pcStarted){ pcStarted = true; pcIO.disconnect(); loadScene(SCENES[0].id, MODELS[0].id); }
+}, { rootMargin: '250px 0px' });
+pcIO.observe(pcSec);
+</script>
+
+<!-- diagnostic: if the 3D module never started (import failed / old cache), say so -->
+<script>
+window.addEventListener('error', (e) => {
+  const s = document.getElementById('pc4d-status');
+  if (s && /loading 3D/.test(s.textContent) && e && e.message && /three|module|import|specifier/i.test(e.message))
+    s.textContent = '3D error: ' + e.message;
+}, true);
+setTimeout(() => {
+  const s = document.getElementById('pc4d-status');
+  if (s && s.textContent.trim() === 'loading 3D…')
+    s.textContent = '3D did not start — hard-refresh (Ctrl+Shift+R); if it persists the three.js module failed to load.';
+}, 6000);
+</script>
 </body>
 </html>
